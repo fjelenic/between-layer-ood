@@ -50,6 +50,36 @@ class TransformerClassifier(nn.Module):
         out = self.transformer(**X_vec)
         logits = self.out(out.last_hidden_state[:, 0, :])
         return logits
+    
+    def forward_react(self, X, t):
+        X_vec = self.vectorizer(X)
+        out = self.transformer(**X_vec)
+        activations = out.last_hidden_state[:, 0, :]
+        
+        t = torch.fill(activations,t)
+        X_react = torch.clip(activations, max=t)
+        
+        logits = self.out(X_react)
+        return logits
+    
+    def forward_ash(self, X, p=0.9):
+        X_vec = self.vectorizer(X)
+        out = self.transformer(**X_vec)
+        activations = out.last_hidden_state[:, 0, :]
+        
+        X_abs = activations
+        t = torch.quantile(X_abs, p, dim=1)
+        t = t.reshape(-1,1).repeat(1, X_abs.shape[1])
+        s1 = X_abs.sum(dim=1)
+
+        X_ash = torch.where(activations<t, 0, activations)
+        s2 = X_ash.sum(dim=1)
+
+        m = s1/s2
+        X_ash = X_ash * torch.exp(m.reshape(-1,1).repeat(1, X_ash.shape[1]))
+        
+        logits = self.out(X_ash)
+        return logits
 
     def get_encoded(self, X, batch_size=128):
         self.eval()

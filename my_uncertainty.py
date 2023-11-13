@@ -33,6 +33,30 @@ class EnergyQuant():
         logits = np.array(logits)
         return -np.log(np.sum(np.exp(logits), axis=1))
     
+    
+class ReactQuant():
+    name = "ReAct"
+    
+    def quantify(self, X_anchor, X_eval, model, p=0.9, **kwargs):
+        t = torch.quantile(model.get_encoded(X_anchor), p)
+        
+        logits = []
+        for X_iter, _ in model.iterator(16, X_eval, None, shuffle=False):
+            logits.extend(model.forward_react(X_iter, t).tolist())
+        logits = np.array(logits)
+        return -np.log(np.sum(np.exp(logits), axis=1))
+    
+    
+class ASHQuant():
+    name = "ASH"
+    
+    def quantify(self, X_eval, model, p=0.9, **kwargs):
+        logits = []
+        for X_iter, _ in model.iterator(16, X_eval, None, shuffle=False):
+            logits.extend(model.forward_ash(X_iter, p).tolist())
+        logits = np.array(logits)
+        return -np.log(np.sum(np.exp(logits), axis=1))
+    
 
 class MCDropoutQuant():
     name = "MC"

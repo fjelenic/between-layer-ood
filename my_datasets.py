@@ -21,7 +21,7 @@ class AmazonReviewData:
     def load(self):
         df = pd.read_csv("amazon_data.csv")
         mapping = dict([(text, i) for i,text in enumerate(sorted(df[df["class"] == "X_train"]["text"].tolist()))])
-        return df[df["class"] == "X_train"]["text"].tolist(), df[df["class"] == "X_test"]["text"].tolist(), df[df["class"] == "y_train"]["text"].tolist(), df[df["class"] == "y_test"]["text"].tolist(), mapping
+        return df[df["class"] == "X_train"]["text"].tolist(), df[df["class"] == "X_test"]["text"].tolist(), df[df["class"] == "y_train"]["text"].astype(int).tolist(), df[df["class"] == "y_test"]["text"].astype(int).tolist(), mapping
 """        
     def load(self):
         data = []
@@ -59,7 +59,7 @@ class AmazonReview2Data:
     def load(self):
         df = pd.read_csv("amazon2_data.csv")
         mapping = dict([(text, i) for i,text in enumerate(sorted(df[df["class"] == "X_train"]["text"].tolist()))])
-        return df[df["class"] == "X_train"]["text"].tolist(), df[df["class"] == "X_test"]["text"].tolist(), df[df["class"] == "y_train"]["text"].tolist(), df[df["class"] == "y_test"]["text"].tolist(), mapping
+        return df[df["class"] == "X_train"]["text"].tolist(), df[df["class"] == "X_test"]["text"].tolist(), df[df["class"] == "y_train"]["text"].astype(int).tolist(), df[df["class"] == "y_test"]["text"].astype(int).tolist(), mapping
 
 """
     def load(self):
