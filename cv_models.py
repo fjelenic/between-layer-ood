@@ -194,7 +194,7 @@ class ResNet(nn.Module):
         out5 = F.avg_pool2d(out4, 4)
         out6 = out5.view(out5.size(0), -1)
         y = self.linear(out6)
-        return y, [conv1, out1, out2, out3, out4, out5]
+        return y
 
     # function to extact the multiple features
     def feature_list(self, x):

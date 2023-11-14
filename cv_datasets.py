@@ -24,29 +24,96 @@ transform_cifar10_test = transforms.Compose(
     ]
 )
 
+transform_cifar100_train = transforms.Compose(
+    [
+        transforms.RandomCrop(32, padding=4),
+        transforms.RandomHorizontalFlip(),  # mirroring
+        transforms.ToTensor(),
+        transforms.Normalize(
+            [0.5070752, 0.486549, 0.4409178],
+            [0.2673342, 0.2564384, 0.2761506],
+        ),
+    ]
+)
+transform_cifar100_test = transforms.Compose(
+    [
+        transforms.ToTensor(),
+        transforms.Normalize(
+            [0.5070752, 0.486549, 0.4409178],
+            [0.2673342, 0.2564384, 0.2761506],
+        ),
+    ]
+)
+
+transform_svhn_train = transforms.Compose(
+    [
+        transforms.RandomCrop(32, padding=4),
+        transforms.RandomHorizontalFlip(),  # mirroring
+        transforms.ToTensor(),
+        transforms.Normalize(
+            [0.4379793, 0.4439904, 0.4729508],
+            [0.1981116, 0.2011045, 0.1970895],
+        ),
+    ]
+)
+transform_svhn_test = transforms.Compose(
+    [
+        transforms.ToTensor(),
+        transforms.Normalize(
+            [0.4379793, 0.4439904, 0.4729508],
+            [0.1981116, 0.2011045, 0.1970895],
+        ),
+    ]
+)
+
 # registries
 transform_registry_train = {
     "cifar10": transform_cifar10_train,
-    "cifar10_data_augmentation": transform_cifar10_train,
+    "cifar100": transform_cifar100_train,
+    "svhn": transform_svhn_train,
 }
 transform_registry_test = {
     "cifar10": transform_cifar10_test,
+    "cifar100": transform_cifar100_test,
+    "svhn": transform_svhn_test,
+}
+n_classes_registry = {
+    "cifar10": 10,
+    "cifar100": 100,
+    "svhn": 10,
 }
 
 
 def get_dataset(dataset_name, data_dir, train: bool):
     dataset_name = dataset_name.lower()
+    transform = (
+        transform_registry_train.get(dataset_name)
+        if train
+        else transform_registry_test.get(dataset_name)
+    )
     if dataset_name == "cifar10":
-        transform = (
-            transform_registry_train.get("cifar10")
-            if train
-            else transform_registry_test.get("cifar10")
-        )
         dataset = torchvision.datasets.CIFAR10(
             root=data_dir, train=train, download=True, transform=transform
         )
+    elif dataset_name == "cifar100":
+        dataset = torchvision.datasets.CIFAR100(
+            root=data_dir, train=train, download=True, transform=transform
+        )
+    elif dataset_name == "svhn":
+        split = "train" if train else "test"
+        dataset = torchvision.datasets.SVHN(
+            root=data_dir, split=split, download=True, transform=transform
+        )
+    else:
+        raise ValueError(
+            f"Dataset '{dataset_name}' is not available. Options: cifar10, cifar100, svhn"
+        )
 
     return dataset
+
+
+def get_num_classes(dataset_name):
+    return n_classes_registry.get(dataset_name.lower())
 
 
 def seed_worker(worker_id):
