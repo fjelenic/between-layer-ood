@@ -1,6 +1,6 @@
 # Out-of-Distribution Detection by Leveraging Between-Layer Transformation Smoothness
 
-Code for the paper [Out-of-Distribution Detection by Leveraging Between-Layer Transformation Smoothness](https://arxiv.org/abs/2310.02832)). Preprint is on arXiv.
+Code for the paper [Out-of-Distribution Detection by Leveraging Between-Layer Transformation Smoothness](https://arxiv.org/abs/2310.02832). Preprint is on arXiv.
 
 ## Abstract
 
