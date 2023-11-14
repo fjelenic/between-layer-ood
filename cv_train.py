@@ -33,11 +33,11 @@ def training_loop(
     testloader,
     device,
     epochs,
-    log_interval,
+    log_interval=1,
     start_epoch=0,
     scheduler=None,
 ):
-    """Train a model with data"""
+    """Main training loop"""
     start = datetime.now()
     for epoch in tqdm(range(start_epoch, epochs + start_epoch)):
         running_loss = 0.0
@@ -45,8 +45,8 @@ def training_loop(
         train_accuracy, test_accuracy = 0, 0
         acc_sum, total = 0, 0
         for _, (batch, labels) in enumerate(trainloader):
-            batch = batch.to(device, non_blocking=True)
-            labels = labels.to(device, non_blocking=True)
+            batch = batch.to(device)
+            labels = labels.to(device)
             # forward + backward + optimize
             outputs = model(batch)
             loss = criterion(outputs, labels)
@@ -91,6 +91,21 @@ def training_loop(
     print("Training completed in: {}s".format(str(datetime.now() - start)))
 
 
+def train_model(
+    model, criterion, optimizer, train_loader, test_loader, device, num_epochs
+):
+    training_loop(
+        model=model,
+        criterion=criterion,
+        optimizer=optimizer,
+        trainloader=train_loader,
+        testloader=test_loader,
+        device=device,
+        epochs=num_epochs,
+    )
+    return model
+
+
 if __name__ == "__main__":
     root = "cv_data"
     dataset_name = "svhn"
@@ -111,11 +126,6 @@ if __name__ == "__main__":
         batch_size=32,
         num_workers=1,
     )
-
-    # for batch in train_loader:
-    #     input, target = batch
-    #     print(input.shape)
-    #     break
 
     n_classes = get_num_classes(dataset_name)
     model = ResNet34(n_classes)

@@ -18,6 +18,15 @@ from datetime import datetime
 from tqdm import tqdm
 
 
+def random_unit_sphere_vector(shape):
+    """
+    Normalized random unit vector.
+    """
+    v = torch.randn(shape)
+    norm_dims = tuple(range(1, len(shape)))
+    return F.normalize(v, p=2.0, dim=norm_dims)
+
+
 def conv3x3(in_planes, out_planes, stride=1):
     return nn.Conv2d(
         in_planes, out_planes, kernel_size=3, stride=stride, padding=1, bias=False
@@ -165,7 +174,7 @@ class PreActBottleneck(nn.Module):
 
 
 class ResNet(nn.Module):
-    def __init__(self, block, num_blocks, num_classes=10):
+    def __init__(self, block, num_blocks, num_classes, device):
         super(ResNet, self).__init__()
         self.in_planes = 64
 
@@ -177,6 +186,8 @@ class ResNet(nn.Module):
         self.layer4 = self._make_layer(block, 512, num_blocks[3], stride=2)
         self.linear = nn.Linear(512 * block.expansion, num_classes)
 
+        self.device = device
+
     def _make_layer(self, block, planes, num_blocks, stride):
         strides = [stride] + [1] * (num_blocks - 1)
         layers = []
@@ -185,8 +196,8 @@ class ResNet(nn.Module):
             self.in_planes = planes * block.expansion
         return nn.Sequential(*layers)
 
-    def forward(self, x):
-        conv1 = F.relu(self.bn1(self.conv1(x)))
+    def forward(self, X):
+        conv1 = F.relu(self.bn1(self.conv1(X)))
         out1 = self.layer1(conv1)
         out2 = self.layer2(out1)
         out3 = self.layer3(out2)
@@ -196,10 +207,26 @@ class ResNet(nn.Module):
         y = self.linear(out6)
         return y
 
+    def _predict_proba(self, X):
+        logits = self(X)
+        probs = F.softmax(logits, dim=1)
+        return probs
+
+    def predict_proba(self, data_loader):
+        self.eval()
+        probs_list = []
+        with torch.inference_mode():
+            for batch in data_loader:
+                X, _ = batch
+                X = X.to(self.device)
+                probs = self._predict_proba(X)
+                probs_list.append(probs.cpu())
+        return torch.cat(probs_list)
+
     # function to extact the multiple features
-    def feature_list(self, x):
+    def feature_list(self, X):
         out_list = []
-        out = F.relu(self.bn1(self.conv1(x)))
+        out = F.relu(self.bn1(self.conv1(X)))
         out_list.append(out)
         out = self.layer1(out)
         out_list.append(out)
@@ -245,138 +272,54 @@ class ResNet(nn.Module):
         y = self.linear(out)
         return y, penultimate
 
-    def get_grad_layers(
-        self, X, batch_size=64, n_estimators=50, estimator=True
-    ):  # 50 estimators is base
+    def get_grad_layers(self, data_loader, n_estimators=10, estimator=True):
         self.eval()
         layer_norms = []
         cnt = 0
-        for X_iter, y_iter in self.iterator(batch_size, X, None, shuffle=False):
+        for batch in data_loader:
+            X, _ = batch
+            X = X.to(self.device)
+
             self.zero_grad()
-            X_vec = self.vectorizer(X_iter)
-            out, layers = self(**X_vec, output_hidden_states=True)
+            out, layers = self.feature_list(X)
             norms = []
-            # J: I think it makes sense to start from 0 in the case of a CNN
+            # J: I think it makes sense to start from 0 for ResNet
             for i in range(0, len(layers) - 1):
                 emb_X = layers[i]  # (batch_size, squence_length, embeding_size)
                 emb_Y = layers[i + 1]  # (batch_size, squence_length, embeding_size)
 
                 ests = []
-                for n in range(n_estimators):
-                    emb_Y_view = emb_Y.flatten(start_dim=1, end_dim=-1)
-                    emb_X_view = emb_X.flatten(start_dim=1, end_dim=-1)
-                    v = torch.randn(emb_Y_view.shape).to(self.device)
-                    est = grad((emb_Y_view * v).sum(), emb_X_view, retain_graph=True)[0]
-                    w = torch.randn(emb_Y_view.shape).to(self.device)
-                    ests.append(((est * w).sum(dim=1) ** 2).cpu())  # (batch_size)
+                for _ in range(n_estimators):
+                    v = random_unit_sphere_vector(emb_Y.shape).to(self.device)
+                    vjp = grad((v * emb_Y).sum(), emb_X, retain_graph=True)[0]
+                    vjp = vjp.reshape(vjp.shape[0], -1)
+                    fro_norms = vjp.norm(p="fro", dim=1) ** 2
+                    ests.append(fro_norms.cpu())  # (batch_size)
 
                 norm_ests = torch.stack(ests, dim=1)  # (batch_size, n_estimators)
                 norms.append(norm_ests.mean(dim=1))  # (batch_size)
 
-            layer_norms.append(
-                torch.stack(norms, dim=0)
-            )  # (num_layers-1 (11), batch_size)
+            layer_norms.append(torch.stack(norms, dim=0))  # (num_layers-1, batch_size)
 
         self.train()
-        return torch.cat(layer_norms, dim=1)  # (num_layers-1 (11), batch_size)
-
-    def training_loop(
-        model,
-        criterion,
-        optimizer,
-        trainloader,
-        testloader,
-        device,
-        epochs,
-        log_interval,
-        checkpoint_interval=10,
-        checkpoint_fn=None,
-        start_epoch=0,
-        scheduler=None,
-    ):
-        # TODO: adjust training loop
-        """Train a model with data"""
-        start = datetime.now()
-        for epoch in tqdm(range(start_epoch, epochs + start_epoch)):
-            running_loss = 0.0
-            model.train()
-            train_accuracy, test_accuracy = 0, 0
-            acc_sum, total = 0, 0
-            for _, (batch, labels) in enumerate(trainloader):
-                batch = batch.to(device, non_blocking=True)
-                labels = labels.to(device, non_blocking=True)
-                # forward + backward + optimize
-                outputs = model(batch)
-                loss = criterion(outputs, labels)
-
-                # zero the parameter gradients
-                optimizer.zero_grad()
-                loss.backward()
-
-                # optimizer step
-                optimizer.step()
-
-                # training statistics
-                running_loss += loss.item()
-                # training accuracy
-                _, pred = torch.max(outputs.detach(), 1)
-                acc_sum += torch.sum(pred == labels).item()
-                total += batch.shape[0]
-
-            # normalizing the loss by the total number of train batches
-            running_loss /= len(trainloader)
-
-            # scheduler
-            if scheduler is not None:
-                scheduler.step()
-
-            # logging
-            if (epoch) % log_interval == 0:
-                # calculate training and test set accuracy of the existing model
-                test_accuracy = test_step(model, testloader, device)
-                train_accuracy = acc_sum / total
-                print(
-                    "Epoch [{}/{}], Loss: {:.4f}, Train Accuracy: {:.2f}%, Test Accuracy: {:.2f}%".format(
-                        epoch + 1,
-                        epochs,
-                        running_loss,
-                        train_accuracy * 100,
-                        test_accuracy * 100,
-                    )
-                )
-
-            # save checkpoint
-            if (epoch + 1) % checkpoint_interval == 0 and checkpoint_fn is not None:
-                state = {
-                    "epoch": epoch,
-                    "model_state_dict": model.state_dict(),
-                    "optimizer_state_dict": optimizer.state_dict(),
-                    "scheduler_state_dict": scheduler.state_dict(),
-                    "train_loss": loss,
-                    "train_accuracy": train_accuracy,
-                    "test_accuracy": test_accuracy,
-                }
-                checkpoint_fn(epoch, state)
-
-        print("==> Finished Training ...")
-        print("Training completed in: {}s".format(str(datetime.now() - start)))
+        return torch.cat(layer_norms, dim=1)  # (num_layers-1, batch_size)
 
 
-def ResNet18(num_c):
-    return ResNet(PreActBlock, [2, 2, 2, 2], num_classes=num_c)
+def ResNet18(num_c, device):
+    return ResNet(PreActBlock, [2, 2, 2, 2], num_classes=num_c, device=device)
 
 
-def ResNet34(num_c):
-    return ResNet(BasicBlock, [3, 4, 6, 3], num_classes=num_c)
+def ResNet34(num_c, device):
+    return ResNet(BasicBlock, [3, 4, 6, 3], num_classes=num_c, device=device)
 
 
-def ResNet50(num_c):
-    return ResNet(Bottleneck, [3, 4, 6, 3], num_classes=num_c)
+def ResNet50(num_c, device):
+    return ResNet(Bottleneck, [3, 4, 6, 3], num_classes=num_c, device=device)
 
 
-def ResNet101(num_c):
-    return ResNet(Bottleneck, [3, 4, 23, 3], num_classes=num_c)
+def ResNet101(num_c, device):
+    return ResNet(Bottleneck, [3, 4, 23, 3], num_classes=num_c, device=device)
 
 
-def ResNet152(num_c):
-    return ResNet(Bottleneck, [3, 8, 36, 3], num_classes=num_c)
+def ResNet152(num_c, device):
+    return ResNet(Bottleneck, [3, 8, 36, 3], num_classes=num_c, device=device)

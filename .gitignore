@@ -1,2 +1,3 @@
-cv_data/*
+cv_data/
+results/
 __pycache__

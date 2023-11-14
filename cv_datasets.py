@@ -126,7 +126,7 @@ def seed_worker(worker_id):
 
 
 def get_data_loader(
-    dataset, batch_size, num_workers, shuffle=False, seed=0, *args, **kwargs
+    dataset, batch_size, num_workers=1, shuffle=False, seed=0, *args, **kwargs
 ):
     g = torch.Generator()
     g.manual_seed(seed)
