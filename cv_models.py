@@ -18,15 +18,6 @@ from datetime import datetime
 from tqdm import tqdm
 
 
-def random_unit_sphere_vector(shape):
-    """
-    Normalized random unit vector.
-    """
-    v = torch.randn(shape)
-    norm_dims = tuple(range(1, len(shape)))
-    return F.normalize(v, p=2.0, dim=norm_dims)
-
-
 def conv3x3(in_planes, out_planes, stride=1):
     return nn.Conv2d(
         in_planes, out_planes, kernel_size=3, stride=stride, padding=1, bias=False
@@ -290,7 +281,7 @@ class ResNet(nn.Module):
 
                 ests = []
                 for _ in range(n_estimators):
-                    v = random_unit_sphere_vector(emb_Y.shape).to(self.device)
+                    v = torch.randn(emb_Y.shape).to(self.device)
                     vjp = grad((v * emb_Y).sum(), emb_X, retain_graph=True)[0]
                     vjp = vjp.reshape(vjp.shape[0], -1)
                     fro_norms = vjp.norm(p="fro", dim=1) ** 2
@@ -311,15 +302,3 @@ def ResNet18(num_c, device):
 
 def ResNet34(num_c, device):
     return ResNet(BasicBlock, [3, 4, 6, 3], num_classes=num_c, device=device)
-
-
-def ResNet50(num_c, device):
-    return ResNet(Bottleneck, [3, 4, 6, 3], num_classes=num_c, device=device)
-
-
-def ResNet101(num_c, device):
-    return ResNet(Bottleneck, [3, 4, 23, 3], num_classes=num_c, device=device)
-
-
-def ResNet152(num_c, device):
-    return ResNet(Bottleneck, [3, 8, 36, 3], num_classes=num_c, device=device)

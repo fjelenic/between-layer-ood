@@ -5,6 +5,7 @@ import torch
 
 from scipy.optimize import minimize_scalar
 import numpy as np
+import argparse
 import pickle
 import random
 import time
@@ -13,6 +14,64 @@ from cv_datasets import get_dataset, get_num_classes, get_data_loader
 from cv_models import ResNet18, ResNet34
 from cv_train import train_model
 import cv_uncertainty as unc
+
+
+def make_parser():
+    parser = argparse.ArgumentParser(description="CV OOD")
+    parser.add_argument(
+        "--data-out",
+        type=str,
+        default="svhn",
+        help="Data corpus.",
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default="ResNet34",
+        help="Model",
+    )
+
+    # Repeat experiments
+    parser.add_argument(
+        "--repeat", type=int, default=5, help="number of times to repeat training"
+    )
+
+    parser.add_argument("--lr", type=float, default=1e-2, help="initial learning rate")
+    # parser.add_argument("--clip", type=float, default=1.0, help="gradient clipping")
+    parser.add_argument("--epochs", type=int, default=100, help="upper epoch limit")
+    parser.add_argument(
+        "--batch-size", type=int, default=128, metavar="N", help="batch size"
+    )
+    parser.add_argument(
+        "--l2", type=float, default=1e-4, help="l2 regularization (weight decay)"
+    )
+    # Gpu based arguments
+    parser.add_argument(
+        "--gpu",
+        type=int,
+        default=-1,
+        help="Gpu to use for experiments (-1 means no GPU)",
+    )
+
+    parser.add_argument(
+        "--save-dir",
+        type=str,
+        default="cv_results",
+        help="Folder to store the results.",
+    )
+    parser.add_argument(
+        "--data-dir",
+        type=str,
+        default="cv_data",
+        help="data folder",
+    )
+    parser.add_argument(
+        "--scheduler",
+        type=bool,
+        default=False,
+        help="Bool: use linear decay scheduler.",
+    )
+    return parser.parse_args()
 
 
 def set_seed(seed):
@@ -45,35 +104,33 @@ def get_t(model, X, y):
     return res.x
 
 
-START = time.time()
-BATCH_SIZE = 32
-DEVICE = "cuda:0"
-FILE = "results_svhn.pkl"
 UNC_METHODS = [unc.BLOODQuant(), unc.LeastConfidentQuant(), unc.EntropyQuant()]
-DATA_IN = ["cifar10"]
-DATA_OUT = "svhn"
-MODEL_NAMES = ["ResNet18"]
-NUM_SEEDS = 1
-BATCH_SIZE_INFERENCE = 32
-ROOT = "cv_data"
-NUM_EPOCHS = 1
-LR = 1e-5
-WD = 1e-6
-
+DATA = {"cifar10", "cifar100", "svhn"}
 MODEL_CLS = {"ResNet18": ResNet18, "ResNet34": ResNet34}
 
 
-criterion = nn.CrossEntropyLoss()
-device = torch.device(DEVICE)
-
-result_dict = {}
-
-n_classes_out = get_num_classes(DATA_OUT)
-test_set_out = get_dataset(DATA_OUT, ROOT, train=False)
-test_loader_out = get_data_loader(test_set_out, batch_size=BATCH_SIZE, shuffle=False)
-
-
 if __name__ == "__main__":
+    START = time.time()
+    args = make_parser()
+
+    cuda = torch.cuda.is_available() and args.gpu != -1
+    device = torch.device("cpu") if not cuda else torch.device(f"cuda:{args.gpu}")
+    criterion = nn.CrossEntropyLoss()
+
+    result_dict = {}
+
+    DATA_OUT = args.data_out
+    DATA_IN = list(DATA - set([DATA_OUT]))
+    MODEL_NAMES = [args.model]
+
+    ROOT = args.data_dir
+
+    n_classes_out = get_num_classes(DATA_OUT)
+    test_set_out = get_dataset(DATA_OUT, ROOT, train=False)
+    test_loader_out = get_data_loader(
+        test_set_out, batch_size=args.batch_size, shuffle=False
+    )
+
     for dataset_in in DATA_IN:
         set_seed(42)
         print(f"{dataset_in} - {time.time()-START}s")
@@ -82,10 +139,10 @@ if __name__ == "__main__":
         train_set_in = get_dataset(dataset_in, ROOT, train=True)
         test_set_in = get_dataset(dataset_in, data_dir=ROOT, train=False)
         train_loader_in = get_data_loader(
-            train_set_in, batch_size=BATCH_SIZE, shuffle=True
+            train_set_in, batch_size=args.batch_size, shuffle=True
         )
         test_loader_in = get_data_loader(
-            test_set_in, batch_size=BATCH_SIZE, shuffle=False
+            test_set_in, batch_size=args.batch_size, shuffle=False
         )
 
         result_dict[dataset_in] = {}
@@ -94,7 +151,7 @@ if __name__ == "__main__":
             result_dict[dataset_in][model_name] = {}
             result_dict[dataset_in][model_name]["fine-tuned"] = []
 
-            for seed in range(NUM_SEEDS):
+            for seed in range(args.repeat):
                 set_seed(seed)
                 print(f"\t\tSeed: {seed+1} - {time.time()-START}s")
                 result_seed = {}
@@ -104,7 +161,9 @@ if __name__ == "__main__":
                 # model = nn.DataParallel(model)
 
                 criterion = nn.CrossEntropyLoss()
-                optimizer = optim.Adam(model.parameters(), lr=LR, weight_decay=WD)
+                optimizer = optim.Adam(
+                    model.parameters(), lr=args.lr, weight_decay=args.l2
+                )
                 # scheduler = None
                 train_model(
                     model=model,
@@ -113,7 +172,7 @@ if __name__ == "__main__":
                     train_loader=train_loader_in,
                     test_loader=test_loader_in,
                     device=device,
-                    num_epochs=NUM_EPOCHS,
+                    num_epochs=args.epochs,
                 )
 
                 for uncertainty in UNC_METHODS:
@@ -132,5 +191,5 @@ if __name__ == "__main__":
 
                 result_dict[dataset_in][model_name]["fine-tuned"].append(result_seed)
 
-    with open(FILE, "wb") as f:
+    with open(f"results/results_{DATA_OUT}.pkl", "wb") as f:
         pickle.dump(result_dict, f)
