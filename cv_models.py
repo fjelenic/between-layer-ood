@@ -272,7 +272,7 @@ class ResNet(nn.Module):
             X = X.to(self.device)
 
             self.zero_grad()
-            out, layers = self.feature_list(X)
+            _, layers = self.feature_list(X)
             norms = []
             # J: I think it makes sense to start from 0 for ResNet
             for i in range(0, len(layers) - 1):
@@ -294,17 +294,16 @@ class ResNet(nn.Module):
 
         self.train()
         return torch.cat(layer_norms, dim=1)  # (num_layers-1, batch_size)
-    
 
     def get_grad_embedding(self, data_loader):
         self.eval()
-        
+
         criterion = nn.CrossEntropyLoss(reduction=None)
         grad_embeddings = []
 
         for X, _ in data_loader:
             self.zero_grad()
-            
+
             X = X.to(self.device)
             logits = self(X)
 
@@ -317,22 +316,24 @@ class ResNet(nn.Module):
                 )
             else:
                 y = torch.argmax(logits, dim=1)
-                
+
             loss = criterion(logits, y)
             for l in loss:
                 embedding = grad(l, self.linear.weight, retain_graph=True)[0]
                 grad_embeddings.append(embedding.flatten(start_dim=1).cpu())
 
-        return torch.stack(grad_embeddings).cpu().detach()  # (batch_size, embedding_size)
-       
+        return (
+            torch.stack(grad_embeddings).cpu().detach()
+        )  # (batch_size, embedding_size)
+
     def get_encoded_layers(self, data_loader):
         self.eval()
         with torch.no_grad():
             embeddings = []
             for X, _ in data_loader:
                 X = X.to(self.device)
-                out_list = self.feature_list(X)
-                embeddings.append(torch.stack(out_list, dim=0).flatten(start_dim=2).cpu())   
+                _, layers = self.feature_list(X)
+                embeddings.append(torch.stack(layers).flatten(start_dim=2).cpu())
         return torch.cat(embeddings, dim=1)  # (num_layers, batch_size, embeding_size)
 
 
@@ -343,6 +344,6 @@ def ResNet18(num_c, device):
 def ResNet34(num_c, device):
     return ResNet(BasicBlock, [3, 4, 6, 3], num_classes=num_c, device=device)
 
+
 def ResNet50(num_c, device):
     return ResNet(Bottleneck, [3, 4, 6, 3], num_classes=num_c, device=device)
-
