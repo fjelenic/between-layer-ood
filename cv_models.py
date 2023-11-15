@@ -273,7 +273,7 @@ class ResNet(nn.Module):
             X = X.to(self.device)
 
             self.zero_grad()
-            out, layers = self.feature_list(X)
+            _, layers = self.feature_list(X)
             norms = []
             # J: I think it makes sense to start from 0 for ResNet
             for i in range(0, len(layers) - 1):
