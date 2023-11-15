@@ -250,7 +250,7 @@ class ResNet(nn.Module):
         out = self.pretrained.layer4(out)
         out_list.append(out)
         out = self.pretrained.avgpool(out)
-        out = torch.flatten(X, 1)
+        out = torch.flatten(out, 1)
         y = self.pretrained.fc(X)
         out_list.append(y)
 
