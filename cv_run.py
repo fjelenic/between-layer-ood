@@ -9,6 +9,7 @@ import argparse
 import pickle
 import random
 import time
+import copy
 
 from cv_datasets import get_dataset, get_num_classes, get_data_loader
 from cv_models import ResNet18, ResNet34
@@ -158,6 +159,7 @@ if __name__ == "__main__":
 
                 model = MODEL_CLS[model_name](num_c=n_classes_in, device=device)
                 model.to(device)
+                base_model = copy.deepcopy(model)
                 # model = nn.DataParallel(model)
 
                 criterion = nn.CrossEntropyLoss()
@@ -180,10 +182,10 @@ if __name__ == "__main__":
                     result_seed[uncertainty.name] = {}
 
                     unc_in = uncertainty.quantify(
-                        data_loader=test_loader_in, model=model, **{}
+                        data_loader=test_loader_in, model=model, **dict(base_model=base_model)
                     )
                     unc_out = uncertainty.quantify(
-                        data_loader=test_loader_out, model=model, **{}
+                        data_loader=test_loader_out, model=model, **dict(base_model=base_model)
                     )
 
                     result_seed[uncertainty.name]["id"] = unc_in
