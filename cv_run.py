@@ -12,7 +12,7 @@ import time
 import copy
 
 from cv_datasets import get_dataset, get_num_classes, get_data_loader
-from cv_models import ResNet18, ResNet34
+from cv_models import ResNet18, ResNet34, ResNet50
 from cv_train import train_model
 import cv_uncertainty as unc
 
@@ -27,8 +27,13 @@ def make_parser():
     )
     parser.add_argument(
         "--model",
-        type=str,
-        default="ResNet34",
+        nargs="+",
+        default=["ResNet34", "ResNet50"],
+        choices=[
+            "ResNet18",
+            "ResNet34",
+            "ResNet50",
+        ],
         help="Model",
     )
 
@@ -81,33 +86,16 @@ def set_seed(seed):
     torch.manual_seed(seed)
 
 
-def temp_nll(t, logits, y_true):
-    logits_scaled = logits / t
-    if logits.shape[1] == 1:
-        probs = torch.sigmoid(logits_scaled)
-        probs = torch.cat([1.0 - probs, probs], dim=1)
-    else:
-        probs = F.softmax(logits_scaled, dim=1)
-    probs_true = probs[np.arange(len(y_true)), y_true]
-    return (-torch.log2(probs_true).sum()).item()
-
-
-def get_t(model, X, y):
-    with torch.no_grad():
-        model.eval()
-        logits = []
-        for X_iter, y_iter in model.iterator(128, X, None, shuffle=False):
-            logits.extend(model.forward(X_iter).tolist())
-        logits = torch.tensor(logits)
-        model.train()
-    f = lambda t: temp_nll(t, logits, y)
-    res = minimize_scalar(f, bounds=(0, 100), method="bounded")
-    return res.x
-
-
-UNC_METHODS = [unc.BLOODQuant(), unc.LeastConfidentQuant(), unc.EntropyQuant()]
+UNC_METHODS = [
+    unc.GradQuant(),
+    unc.RepresentationChangeQuant(),
+    unc.BLOODQuant(),
+    unc.LeastConfidentQuant(),
+    unc.EntropyQuant(),
+    unc.EnergyQuant(),
+]
 DATA = {"cifar10", "cifar100", "svhn"}
-MODEL_CLS = {"ResNet18": ResNet18, "ResNet34": ResNet34}
+MODEL_CLS = {"ResNet18": ResNet18, "ResNet34": ResNet34, "ResNet50": ResNet50}
 
 
 if __name__ == "__main__":
@@ -122,7 +110,7 @@ if __name__ == "__main__":
 
     DATA_OUT = args.data_out
     DATA_IN = list(DATA - set([DATA_OUT]))
-    MODEL_NAMES = [args.model]
+    MODEL_NAMES = args.model
 
     ROOT = args.data_dir
 
@@ -182,10 +170,14 @@ if __name__ == "__main__":
                     result_seed[uncertainty.name] = {}
 
                     unc_in = uncertainty.quantify(
-                        data_loader=test_loader_in, model=model, **dict(base_model=base_model)
+                        data_loader=test_loader_in,
+                        model=model,
+                        **dict(base_model=base_model),
                     )
                     unc_out = uncertainty.quantify(
-                        data_loader=test_loader_out, model=model, **dict(base_model=base_model)
+                        data_loader=test_loader_out,
+                        model=model,
+                        **dict(base_model=base_model),
                     )
 
                     result_seed[uncertainty.name]["id"] = unc_in

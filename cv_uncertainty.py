@@ -23,7 +23,7 @@ class EntropyQuant:
         return entropies
 
 
-class EnergyQuant():
+class EnergyQuant:
     name = "energy"
 
     def quantify(self, model, data_loader, **kwargs):
@@ -53,11 +53,13 @@ class EnergyQuant():
 #         return entropies_dropout
 
 
-class GradQuant():
+class GradQuant:
     name = "gradient"
 
-    def quantify(self, model, data_loader, criterion, **kwargs):
-        grad_embedding = model.get_grad_embedding(data_loader) # (batch_size, embedding_size)
+    def quantify(self, model, data_loader, **kwargs):
+        grad_embedding = model.get_grad_embedding(
+            data_loader
+        )  # (batch_size, embedding_size)
         return np.linalg.norm(grad_embedding, ord=2, axis=1)
 
 
@@ -73,13 +75,21 @@ class RepresentationChangeQuant:
     name = "repr_change"
 
     def quantify(self, model, data_loader, base_model, **kwargs):
-        repr_base = base_model.get_encoded_layers(
-            data_loader
-        )  # (num_layers, batch_size, embeding_size)
-        repr_new = model.get_encoded_layers(
-            data_loader
-        )  # (num_layers, batch_size, embeding_size)
+        device = model.device
+        num_layers = model.num_layers
+        diff_list = []
 
-        return np.linalg.norm(
-            (repr_new - repr_base).cpu().detach().numpy(), ord=2, axis=-1
-        )  # (num_layers, batch_size)
+        for X, _ in data_loader:
+            X = X.to(device)
+
+            enc_base = base_model.get_batch_encoded_layers(X)
+            enc_new = model.get_batch_encoded_layers(X)
+
+            diffs = []
+            for lay_base, lay_new in zip(enc_base, enc_new):
+                norm = np.linalg.norm((lay_new - lay_base).numpy(), ord=2, axis=-1)
+                diffs.append(norm)
+
+            diff_list.append(diffs)
+
+        return np.array(diffs).reshape(num_layers, -1)  # (num_layers, N)

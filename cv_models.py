@@ -178,6 +178,7 @@ class ResNet(nn.Module):
         self.linear = nn.Linear(512 * block.expansion, num_classes)
 
         self.device = device
+        self.num_layers = 5
 
     def _make_layer(self, block, planes, num_blocks, stride):
         strides = [stride] + [1] * (num_blocks - 1)
@@ -294,17 +295,16 @@ class ResNet(nn.Module):
 
         self.train()
         return torch.cat(layer_norms, dim=1)  # (num_layers-1, batch_size)
-    
 
     def get_grad_embedding(self, data_loader):
         self.eval()
-        
-        criterion = nn.CrossEntropyLoss(reduction=None)
+
+        criterion = nn.CrossEntropyLoss(reduction="none")
         grad_embeddings = []
 
         for X, _ in data_loader:
             self.zero_grad()
-            
+
             X = X.to(self.device)
             logits = self(X)
 
@@ -317,23 +317,22 @@ class ResNet(nn.Module):
                 )
             else:
                 y = torch.argmax(logits, dim=1)
-                
+
             loss = criterion(logits, y)
             for l in loss:
                 embedding = grad(l, self.linear.weight, retain_graph=True)[0]
                 grad_embeddings.append(embedding.flatten(start_dim=1).cpu())
 
-        return torch.stack(grad_embeddings).cpu().detach()  # (batch_size, embedding_size)
-       
-    def get_encoded_layers(self, data_loader):
+        return (
+            torch.stack(grad_embeddings).cpu().detach()
+        )  # (batch_size, embedding_size)
+
+    def get_batch_encoded_layers(self, X):
         self.eval()
         with torch.no_grad():
-            embeddings = []
-            for X, _ in data_loader:
-                X = X.to(self.device)
-                out_list = self.feature_list(X)
-                embeddings.append(torch.stack(out_list, dim=0).flatten(start_dim=2).cpu())   
-        return torch.cat(embeddings, dim=1)  # (num_layers, batch_size, embeding_size)
+            _, layers = self.feature_list(X)
+            embeddings = [layer.flatten(start_dim=1).cpu().detach() for layer in layers]
+            return embeddings
 
 
 def ResNet18(num_c, device):
@@ -343,6 +342,6 @@ def ResNet18(num_c, device):
 def ResNet34(num_c, device):
     return ResNet(BasicBlock, [3, 4, 6, 3], num_classes=num_c, device=device)
 
+
 def ResNet50(num_c, device):
     return ResNet(Bottleneck, [3, 4, 6, 3], num_classes=num_c, device=device)
-
