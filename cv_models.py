@@ -17,6 +17,12 @@ from torch.autograd import grad
 from datetime import datetime
 from tqdm import tqdm
 
+import torch
+import torchvision.models as models
+
+# Load the pre-trained ResNet-18 model
+model = models.resnet18(pretrained=True)
+
 
 def conv3x3(in_planes, out_planes, stride=1):
     return nn.Conv2d(
@@ -165,20 +171,30 @@ class PreActBottleneck(nn.Module):
 
 
 class ResNet(nn.Module):
-    def __init__(self, block, num_blocks, num_classes, device):
+    def __init__(self, block, num_blocks, num_classes, device, pretrained):
         super(ResNet, self).__init__()
         self.in_planes = 64
+        self.pretrained = pretrained
 
-        self.conv1 = conv3x3(3, 64)
-        self.bn1 = nn.BatchNorm2d(64)
-        self.layer1 = self._make_layer(block, 64, num_blocks[0], stride=1)
-        self.layer2 = self._make_layer(block, 128, num_blocks[1], stride=2)
-        self.layer3 = self._make_layer(block, 256, num_blocks[2], stride=2)
-        self.layer4 = self._make_layer(block, 512, num_blocks[3], stride=2)
-        self.linear = nn.Linear(512 * block.expansion, num_classes)
+        if pretrained:
+            self.conv1 = pretrained.conv1
+            self.bn1 = pretrained.bn1
+            self.layer1 = pretrained.layer1
+            self.layer2 = pretrained.layer2
+            self.layer3 = pretrained.layer3
+            self.layer4 = pretrained.layer4
+            self.linear = pretrained.fc
+        else:
+            self.conv1 = conv3x3(3, 64)
+            self.bn1 = nn.BatchNorm2d(64)
+            self.layer1 = self._make_layer(block, 64, num_blocks[0], stride=1)
+            self.layer2 = self._make_layer(block, 128, num_blocks[1], stride=2)
+            self.layer3 = self._make_layer(block, 256, num_blocks[2], stride=2)
+            self.layer4 = self._make_layer(block, 512, num_blocks[3], stride=2)
+            self.linear = nn.Linear(512 * block.expansion, num_classes)
 
         self.device = device
-        self.num_layers = 5
+        self.num_layers = 6
 
     def _make_layer(self, block, planes, num_blocks, stride):
         strides = [stride] + [1] * (num_blocks - 1)
@@ -189,6 +205,9 @@ class ResNet(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, X):
+        if self.pretrained:
+            return self.pretrained(X)
+
         conv1 = F.relu(self.bn1(self.conv1(X)))
         out1 = self.layer1(conv1)
         out2 = self.layer2(out1)
@@ -215,8 +234,33 @@ class ResNet(nn.Module):
                 probs_list.append(probs.cpu())
         return torch.cat(probs_list)
 
+    def _pretrained_feature_list(self, X):
+        out_list = []
+        out = self.pretrained.conv1(X)
+        out = self.pretrained.bn1(out)
+        out = self.pretrained.relu(out)
+        out = self.pretrained.maxpool(out)
+        out_list.append(out)
+        out = self.pretrained.layer1(out)
+        out_list.append(out)
+        out = self.pretrained.layer2(out)
+        out_list.append(out)
+        out = self.pretrained.layer3(out)
+        out_list.append(out)
+        out = self.pretrained.layer4(out)
+        out_list.append(out)
+        out = self.pretrained.avgpool(out)
+        out = torch.flatten(X, 1)
+        y = self.pretrained.fc(X)
+        out_list.append(y)
+
+        return y, out_list
+
     # function to extact the multiple features
     def feature_list(self, X):
+        if self.pretrained:
+            return self._pretrained_feature_list(X)
+
         out_list = []
         out = F.relu(self.bn1(self.conv1(X)))
         out_list.append(out)
@@ -231,38 +275,8 @@ class ResNet(nn.Module):
         out = F.avg_pool2d(out, 4)
         out = out.view(out.size(0), -1)
         y = self.linear(out)
+        out_list.append(y)
         return y, out_list
-
-    # function to extact a specific feature
-    def intermediate_forward(self, x, layer_index):
-        out = F.relu(self.bn1(self.conv1(x)))
-        if layer_index == 1:
-            out = self.layer1(out)
-        elif layer_index == 2:
-            out = self.layer1(out)
-            out = self.layer2(out)
-        elif layer_index == 3:
-            out = self.layer1(out)
-            out = self.layer2(out)
-            out = self.layer3(out)
-        elif layer_index == 4:
-            out = self.layer1(out)
-            out = self.layer2(out)
-            out = self.layer3(out)
-            out = self.layer4(out)
-        return out
-
-    # function to extact the penultimate features
-    def penultimate_forward(self, x):
-        out = F.relu(self.bn1(self.conv1(x)))
-        out = self.layer1(out)
-        out = self.layer2(out)
-        out = self.layer3(out)
-        penultimate = self.layer4(out)
-        out = F.avg_pool2d(penultimate, 4)
-        out = out.view(out.size(0), -1)
-        y = self.linear(out)
-        return y, penultimate
 
     def get_grad_layers(self, data_loader, n_estimators=10, estimator=True):
         self.eval()
@@ -345,3 +359,33 @@ def ResNet34(num_c, device):
 
 def ResNet50(num_c, device):
     return ResNet(Bottleneck, [3, 4, 6, 3], num_classes=num_c, device=device)
+
+
+def ResNet18PT(num_c, device):
+    return ResNet(
+        PreActBlock,
+        [2, 2, 2, 2],
+        num_classes=num_c,
+        device=device,
+        pretrained=models.resnet18(pretrained=True),
+    )
+
+
+def ResNet34PT(num_c, device):
+    return ResNet(
+        BasicBlock,
+        [3, 4, 6, 3],
+        num_classes=num_c,
+        device=device,
+        pretrained=models.resnet34(pretrained=True),
+    )
+
+
+def ResNet50PT(num_c, device):
+    return ResNet(
+        Bottleneck,
+        [3, 4, 6, 3],
+        num_classes=num_c,
+        device=device,
+        pretrained=models.resnet50(pretrained=True),
+    )

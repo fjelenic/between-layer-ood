@@ -11,8 +11,8 @@ import random
 import time
 import copy
 
+from cv_models import ResNet18, ResNet34, ResNet50, ResNet18PT, ResNet34PT, ResNet50PT
 from cv_datasets import get_dataset, get_num_classes, get_data_loader
-from cv_models import ResNet18, ResNet34, ResNet50
 from cv_train import train_model
 import cv_uncertainty as unc
 
@@ -33,6 +33,9 @@ def make_parser():
             "ResNet18",
             "ResNet34",
             "ResNet50",
+            "ResNet18PT",
+            "ResNet34PT",
+            "ResNet50PT",
         ],
         help="Model",
     )
@@ -95,7 +98,14 @@ UNC_METHODS = [
     unc.EnergyQuant(),
 ]
 DATA = {"cifar10", "cifar100", "svhn"}
-MODEL_CLS = {"ResNet18": ResNet18, "ResNet34": ResNet34, "ResNet50": ResNet50}
+MODEL_CLS = {
+    "ResNet18": ResNet18,
+    "ResNet34": ResNet34,
+    "ResNet50": ResNet50,
+    "ResNet18PT": ResNet18PT,
+    "ResNet34PT": ResNet34PT,
+    "ResNet50PT": ResNet50PT,
+}
 
 
 if __name__ == "__main__":
