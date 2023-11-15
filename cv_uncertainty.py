@@ -57,10 +57,8 @@ class GradQuant:
     name = "gradient"
 
     def quantify(self, model, data_loader, **kwargs):
-        grad_embedding = model.get_grad_embedding(
-            data_loader
-        )  # (batch_size, embedding_size)
-        return np.linalg.norm(grad_embedding, ord=2, axis=1)
+        grad_norms = model.get_grad_embedding_norms(data_loader)
+        return grad_norms.numpy()
 
 
 class BLOODQuant:

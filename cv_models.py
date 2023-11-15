@@ -251,7 +251,7 @@ class ResNet(nn.Module):
         out_list.append(out)
         out = self.pretrained.avgpool(out)
         out = torch.flatten(out, 1)
-        y = self.pretrained.fc(X)
+        y = self.pretrained.fc(out)
         out_list.append(y)
 
         return y, out_list
@@ -310,7 +310,7 @@ class ResNet(nn.Module):
         self.train()
         return torch.cat(layer_norms, dim=1)  # (num_layers-1, batch_size)
 
-    def get_grad_embedding(self, data_loader):
+    def get_grad_embedding_norms(self, data_loader):
         self.eval()
 
         criterion = nn.CrossEntropyLoss(reduction="none")
@@ -335,11 +335,11 @@ class ResNet(nn.Module):
             loss = criterion(logits, y)
             for l in loss:
                 embedding = grad(l, self.linear.weight, retain_graph=True)[0]
-                grad_embeddings.append(embedding.flatten(start_dim=1).cpu())
+                grad_embeddings.append(
+                    embedding.flatten(start_dim=1).cpu().norm(p="fro", dim=1)
+                )
 
-        return (
-            torch.stack(grad_embeddings).cpu().detach()
-        )  # (batch_size, embedding_size)
+        return torch.stack(grad_embeddings).cpu().detach()
 
     def get_batch_encoded_layers(self, X):
         self.eval()
