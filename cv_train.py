@@ -4,23 +4,28 @@ from torch import optim
 from datetime import datetime
 from tqdm import tqdm
 
-from cv_datasets import get_dataset, get_data_loader, get_num_classes
-from cv_models import ResNet18, ResNet34
+from transformers import AutoImageProcessor
+
+from cv_datasets import (
+    get_num_classes,
+    get_data_loaders,
+)
+from cv_models import ResNet18, ResNet34, ViT
 
 
 def test_step(model, dataloader, device):
     model.eval()
     acc_sum, total = 0, 0
     with torch.no_grad():
-        for batch, labels in dataloader:
-            batch = batch.to(device, non_blocking=True)
-            labels = labels.to(device, non_blocking=True)
+        for batch in dataloader:
+            X = batch["pixel_values"].to(device)
+            labels = batch["labels"].to(device)
 
-            out = model(batch)
+            out = model(X)
             _, pred = torch.max(out, 1)
 
             acc_sum += torch.sum(pred == labels).item()
-            total += batch.shape[0]
+            total += X.shape[0]
 
     return acc_sum / total
 
@@ -44,11 +49,12 @@ def training_loop(
         model.train()
         train_accuracy, test_accuracy = 0, 0
         acc_sum, total = 0, 0
-        for _, (batch, labels) in enumerate(trainloader):
-            batch = batch.to(device)
-            labels = labels.to(device)
+        for _, batch in enumerate(trainloader):
+            X = batch["pixel_values"].to(device)
+            labels = batch["labels"].to(device)
+
             # forward + backward + optimize
-            outputs = model(batch)
+            outputs = model(X)
             loss = criterion(outputs, labels)
 
             # zero the parameter gradients
@@ -63,7 +69,7 @@ def training_loop(
             # training accuracy
             _, pred = torch.max(outputs.detach(), 1)
             acc_sum += torch.sum(pred == labels).item()
-            total += batch.shape[0]
+            total += X.shape[0]
 
         # normalizing the loss by the total number of train batches
         running_loss /= len(trainloader)
@@ -106,34 +112,32 @@ def train_model(
     return model
 
 
+from torchvision.transforms import (
+    CenterCrop,
+    Compose,
+    Normalize,
+    RandomHorizontalFlip,
+    RandomResizedCrop,
+    Resize,
+    ToTensor,
+)
+
+
 if __name__ == "__main__":
-    root = "cv_data"
-    dataset_name = "svhn"
-    train_set = get_dataset(dataset_name, root, train=True)
-    test_set = get_dataset(dataset_name, root, train=False)
+    dataset_name = "cifar100"
 
     device = torch.device("cuda:0")
 
-    train_loader = get_data_loader(
-        train_set,
-        batch_size=32,
-        num_workers=1,
-        shuffle=True,
-    )
-
-    test_loader = get_data_loader(
-        test_set,
-        batch_size=32,
-        num_workers=1,
-    )
-
     n_classes = get_num_classes(dataset_name)
-    model = ResNet34(n_classes)
+
+    processor = AutoImageProcessor.from_pretrained("google/vit-base-patch16-224-in21k")
+    model = ViT(n_classes, device, processor=processor)
     model.to(device)
-    model = nn.DataParallel(model)
+
+    train_loader, test_loader = get_data_loaders(dataset_name, processor, 32)
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=1e-5, weight_decay=1e-6)
+    optimizer = optim.Adam(model.parameters(), lr=2e-5, weight_decay=1e-3)
     scheduler = None
     # scheduler = optim.lr_scheduler.StepLR()
 

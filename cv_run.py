@@ -3,6 +3,8 @@ from torch import optim
 from torch import nn
 import torch
 
+from transformers import AutoImageProcessor
+
 from scipy.optimize import minimize_scalar
 import numpy as np
 import argparse
@@ -11,8 +13,16 @@ import random
 import time
 import copy
 
-from cv_models import ResNet18, ResNet34, ResNet50, ResNet18PT, ResNet34PT, ResNet50PT
-from cv_datasets import get_dataset, get_num_classes, get_data_loader
+from cv_models import (
+    ResNet18,
+    ResNet34,
+    ResNet50,
+    ResNet18PT,
+    ResNet34PT,
+    ResNet50PT,
+    ViT,
+)
+from cv_datasets import get_num_classes, get_data_loaders
 from cv_train import train_model
 import cv_uncertainty as unc
 
@@ -28,7 +38,7 @@ def make_parser():
     parser.add_argument(
         "--model",
         nargs="+",
-        default=["ResNet34", "ResNet50"],
+        default=["ViT"],
         choices=[
             "ResNet18",
             "ResNet34",
@@ -36,6 +46,7 @@ def make_parser():
             "ResNet18PT",
             "ResNet34PT",
             "ResNet50PT",
+            "ViT",
         ],
         help="Model",
     )
@@ -45,14 +56,14 @@ def make_parser():
         "--repeat", type=int, default=5, help="number of times to repeat training"
     )
 
-    parser.add_argument("--lr", type=float, default=1e-2, help="initial learning rate")
+    parser.add_argument("--lr", type=float, default=2e-5, help="initial learning rate")
     # parser.add_argument("--clip", type=float, default=1.0, help="gradient clipping")
-    parser.add_argument("--epochs", type=int, default=100, help="upper epoch limit")
+    parser.add_argument("--epochs", type=int, default=5, help="upper epoch limit")
     parser.add_argument(
-        "--batch-size", type=int, default=128, metavar="N", help="batch size"
+        "--batch-size", type=int, default=32, metavar="N", help="batch size"
     )
     parser.add_argument(
-        "--l2", type=float, default=1e-4, help="l2 regularization (weight decay)"
+        "--l2", type=float, default=1e-2, help="l2 regularization (weight decay)"
     )
     # Gpu based arguments
     parser.add_argument(
@@ -90,8 +101,8 @@ def set_seed(seed):
 
 
 UNC_METHODS = [
-    unc.GradQuant(),
-    unc.RepresentationChangeQuant(),
+    # unc.GradQuant(),
+    # unc.RepresentationChangeQuant(),
     unc.BLOODQuant(),
     unc.LeastConfidentQuant(),
     unc.EntropyQuant(),
@@ -105,6 +116,7 @@ MODEL_CLS = {
     "ResNet18PT": ResNet18PT,
     "ResNet34PT": ResNet34PT,
     "ResNet50PT": ResNet50PT,
+    "ViT": ViT,
 }
 
 
@@ -125,9 +137,9 @@ if __name__ == "__main__":
     ROOT = args.data_dir
 
     n_classes_out = get_num_classes(DATA_OUT)
-    test_set_out = get_dataset(DATA_OUT, ROOT, train=False)
-    test_loader_out = get_data_loader(
-        test_set_out, batch_size=args.batch_size, shuffle=False
+    processor = AutoImageProcessor.from_pretrained("google/vit-base-patch16-224-in21k")
+    train_loader_out, test_loader_out = get_data_loaders(
+        DATA_OUT, batch_size=args.batch_size, processor=processor
     )
 
     for dataset_in in DATA_IN:
@@ -135,13 +147,8 @@ if __name__ == "__main__":
         print(f"{dataset_in} - {time.time()-START}s")
 
         n_classes_in = get_num_classes(dataset_in)
-        train_set_in = get_dataset(dataset_in, ROOT, train=True)
-        test_set_in = get_dataset(dataset_in, data_dir=ROOT, train=False)
-        train_loader_in = get_data_loader(
-            train_set_in, batch_size=args.batch_size, shuffle=True
-        )
-        test_loader_in = get_data_loader(
-            test_set_in, batch_size=args.batch_size, shuffle=False
+        train_loader_in, test_loader_in = get_data_loaders(
+            dataset_in, batch_size=args.batch_size, processor=processor
         )
 
         result_dict[dataset_in] = {}
@@ -155,7 +162,9 @@ if __name__ == "__main__":
                 print(f"\t\tSeed: {seed+1} - {time.time()-START}s")
                 result_seed = {}
 
-                model = MODEL_CLS[model_name](num_c=n_classes_in, device=device)
+                model = MODEL_CLS[model_name](
+                    n_classes_in, device=device, processor=processor
+                )
                 model.to(device)
                 base_model = copy.deepcopy(model)
                 # model = nn.DataParallel(model)

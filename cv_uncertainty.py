@@ -29,7 +29,7 @@ class EnergyQuant:
     def quantify(self, model, data_loader, **kwargs):
         logits = []
         for batch in data_loader:
-            X, _ = batch
+            X = batch["pixel_values"]
             X = X.to(model.device)
             logits.extend(model(X).tolist())
         logits = np.array(logits)
@@ -57,15 +57,17 @@ class GradQuant:
     name = "gradient"
 
     def quantify(self, model, data_loader, **kwargs):
-        grad_norms = model.get_grad_embedding_norms(data_loader)
-        return grad_norms.numpy()
+        grad_embedding = model.get_grad_embedding(
+            data_loader, grad_embedding_type="linear"
+        )  # (batch_size, embedding_size)
+        return np.linalg.norm(grad_embedding, ord=2, axis=1)
 
 
 class BLOODQuant:
     name = "BLOOD"
 
-    def quantify(self, model, data_loader, estimator=True, **kwargs):
-        norms = model.get_grad_layers(data_loader, estimator=estimator)
+    def quantify(self, model, data_loader, **kwargs):
+        norms = model.get_grad_layers(data_loader)
         return norms
 
 
@@ -91,3 +93,15 @@ class RepresentationChangeQuant:
             diff_list.append(diffs)
 
         return np.array(diffs).reshape(num_layers, -1)  # (num_layers, N)
+
+
+class ASHQuant:
+    name = "ASH"
+
+    def quantify(self, model, data_loader, p=0.9, **kwargs):
+        logits = []
+        for X, _ in data_loader:
+            X = X.to(model.device)
+            logits.extend(model.forward_ash(X, p).tolist())
+        logits = np.array(logits)
+        return -np.log(np.sum(np.exp(logits), axis=1))
