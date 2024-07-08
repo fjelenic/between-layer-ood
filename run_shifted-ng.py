@@ -11,7 +11,6 @@ import pickle
 import random
 import math
 import time
-from my_utils import get_cka_matrix
 from scipy.optimize import minimize_scalar
 from collections import Counter
 
@@ -48,7 +47,7 @@ START = time.time()
 BATCH_SIZE = 16
 GPU = "cuda:0"
 FILE = "results-shifted-ng.pkl"
-UNCERNS = [mu.BLOODQuant(), mu.LeastConfidentQuant(), mu.EntropyQuant(), mu.EnergyQuant() mu.MCDropoutQuant(), mu.GradQuant()] + [mu.TemperatureScalingQuant(), mu.EnsambleQuant(), mu.MahalanobisQuant()] + [mu.RepresentationChangeQuant()]
+UNCERNS = [mu.BLOODQuant(), mu.LeastConfidentQuant(), mu.EntropyQuant(), mu.EnergyQuant(), mu.MCDropoutQuant(), mu.GradQuant()] + [mu.TemperatureScalingQuant(), mu.EnsambleQuant(), mu.MahalanobisQuant()] + [mu.RepresentationChangeQuant()]
 DATA = [md.NewsGroupsData()]
 NUM_SEEDS = 5
 MODEL_NAMES = ["RoBERTa", "ELECTRA"]

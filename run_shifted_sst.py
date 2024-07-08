@@ -11,7 +11,6 @@ import pickle
 import random
 import math
 import time
-from my_utils import get_cka_matrix
 from scipy.optimize import minimize_scalar
 from collections import Counter
 

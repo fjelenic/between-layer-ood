@@ -11,7 +11,6 @@ import pickle
 import random
 import math
 import time
-from my_utils import get_cka_matrix
 from scipy.optimize import minimize_scalar
 
 
@@ -94,7 +93,7 @@ for data in DATA:
                 model = mm.TransformerClassifier(model_name, data.num_out, device=torch.device(GPU))
                 criterion = nn.BCEWithLogitsLoss() if data.num_out == 1 else nn.CrossEntropyLoss()
                 criterion.to(model.device)
-                model.train_loop(X_train_id, y_train_id, criterion=criterion, batch_size=BATCH_SIZE//2 if data.name in LONG_DATA else BATCH_SIZE, cartography=False, lr=lr, X_val=X_test_id, y_val=y_test_id if m==0 else None)
+                model.train_loop(X_train_id, y_train_id, criterion=criterion, batch_size=BATCH_SIZE//2 if data.name in LONG_DATA else BATCH_SIZE, cartography=False, X_val=X_test_id, y_val=y_test_id if m==0 else None)
                 models.append(model)
                 
             model_orig = mm.TransformerClassifier(model_name, data.num_out, device=torch.device(GPU))

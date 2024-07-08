@@ -10,7 +10,6 @@ import pickle
 import random
 import math
 import time
-from my_utils import get_cka_matrix
 
 
 def set_seed(seed):
